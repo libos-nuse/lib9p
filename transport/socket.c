@@ -69,12 +69,15 @@ static ssize_t xwrite(int, void *, size_t);
 int
 l9p_start_server(struct l9p_server *server, const char *host, const char *port)
 {
+#if 0
 	struct addrinfo *res, *res0, hints;
+#endif
 	struct kevent kev[2];
 	struct kevent event[2];
-	int err, kq, i, val, evs, nsockets = 0;
+	int kq, i, val, evs, nsockets = 0;
 	int sockets[2];
 
+#if 0
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = PF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
@@ -84,26 +87,35 @@ l9p_start_server(struct l9p_server *server, const char *host, const char *port)
 		return (-1);
 
 	for (res = res0; res; res = res->ai_next) {
-		int s = socket(res->ai_family, res->ai_socktype,
-		    res->ai_protocol);
+#endif
+		int s = socket(AF_UNIX, SOCK_STREAM, 0);
 
 		val = 1;
 		setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
 
 		if (s < 0)
-			continue;
+			return -1;
+#include <sys/un.h>
+		static struct sockaddr_un sun = {
+		.sun_family = AF_LOCAL,
+		.sun_len = sizeof(sun),
+		};
+		memcpy(&sun.sun_path, host, strlen(host));
 
-		if (bind(s, res->ai_addr, res->ai_addrlen) < 0) {
+		if (bind(s, (const struct sockaddr *)&sun, sizeof(sun)) < 0) {
 			close(s);
-			continue;
+			return -1;
 		}
+		L9P_LOG(L9P_DEBUG, "port: %s", port);
 
 		sockets[nsockets] = s;
 		EV_SET(&kev[nsockets++], s, EVFILT_READ, EV_ADD | EV_ENABLE, 0,
 		    0, 0);
 		listen(s, 10);
+#if 0
 	}
-
+#endif
+	
 	if (nsockets < 1) {
 		L9P_LOG(L9P_ERROR, "bind(): %s", strerror(errno));
 		return(-1);
@@ -151,18 +163,19 @@ l9p_socket_accept(struct l9p_server *server, int conn_fd,
 {
 	struct l9p_socket_softc *sc;
 	struct l9p_connection *conn;
-	char host[NI_MAXHOST + 1];
-	char serv[NI_MAXSERV + 1];
-	int err;
+	char host[NI_MAXHOST + 1] = "/tmp/9psv";
+	char serv[NI_MAXSERV + 1] = "/tmp/9psv";
+	int err = 0;
+#if 0
 
 	err = getnameinfo(client_addr, client_addr_len, host, NI_MAXHOST, serv,
 	    NI_MAXSERV, NI_NUMERICHOST | NI_NUMERICSERV);
-
+#endif
 	if (err != 0) {
 		L9P_LOG(L9P_WARNING, "cannot look up client name: %s",
 		    gai_strerror(err));
 	} else {
-		L9P_LOG(L9P_INFO, "new connection from %s:%s", host, serv);
+		L9P_LOG(L9P_INFO, "new connection from %s:%s %p %d", host, serv, client_addr, client_addr_len);
 	}
 
 	if (l9p_connection_init(server, &conn) != 0) {
@@ -231,7 +244,7 @@ l9p_socket_readmsg(struct l9p_socket_softc *sc, void **buf, size_t *size)
 
 	ret = xread(fd, buffer, sizeof(uint32_t));
 	if (ret < 0) {
-		L9P_LOG(L9P_ERROR, "read(): %s", strerror(errno));
+		L9P_LOG(L9P_ERROR, "read1(): %s", strerror(errno));
 		return (-1);
 	}
 
